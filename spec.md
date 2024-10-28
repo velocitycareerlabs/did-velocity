@@ -1,8 +1,25 @@
 # DID Method Specification
 
-`did:velocity:v2` is immutable DID method for storing public keys on the Velocity Blockchain. It is similar to did:key and did:jwk in that is supports
-only a single key being written to the ledger. The main difference from those existing DID methods is that did:velocity is encoded as a bucket reference
-to an on chain contract that ensures that resolution will burn an ethereum NFT 
+## Introduction 
+
+The world does not need another DID method, and yet the Velocity Network Foundation decided it needed one. What are the reasons for this? This first is that the combination of requirements that Velocity Network needed for the inventing a DID method for the credentials that were issued on the network
+
+1.	For VC verification keys
+2.	Are composable
+3.	Decentralized hosting
+4.	Immutable
+5.	Free creation
+6.	Optional fees when read
+
+`did:velocity:v2` is immutable DID method for storing public keys on the Velocity Blockchain. One way it is similar to `did:key` and `did:jwk` in that is supports
+only a single key at a time, though in this case they are written to a ledger.
+
+## How it works
+
+When creating a Velocity DID the method stores only a single encrypted key and a credential type in binary format on-chain. They need to be created when the credential is accepted by the holder. Creating the data on-chain requires signing a Velocity Distributed Ledger transaction using the Issuer’s network registered distributed ledger key. Modifications are not permitted, meaning that each VC verification key is static and immutable.
+
+The resolution of the DID Document can be for one or more verifiable credentials and, therefore, can contain multiple keys. Furthermore, the resolution can be restricted to transactions that include payment through an on-chain payment-receipt NFT. During resolution, the payment-receipt NFT will be “burnt,” ensuring single use. The Velocity DID method therefore enables payment gating of verification processes. 
+
 
 ## DID Format
 
@@ -32,7 +49,7 @@ When having a DID with `identifiers` that is prefixed with `multi:` then more th
 #### To create the DID:
 
 1. Generate the private/public key pair
-2. Derive a secret by hashing the credential and running Argon2 algorithm
+2. Derive a secret by running [Encryption Key Derivation](#encrpytion-key-derivation)
 3. Encrypt the public key using AES-256-GCM
 4. Export it as a hex value
 5. Add a credential type value
@@ -40,41 +57,11 @@ When having a DID with `identifiers` that is prefixed with `multi:` then more th
 7. Encode the metadataa list as an ethereum url
 8. Attach the prefix `did:velocity:v2` that ethereum url
 
-#### To create the DID Document
-
-1. Derive the secret used initially by hashing the credential and running Argon2 algorithm
-2. Decrypt the hex value
-3. Convert the hex key to a jwk (`json-web-key`)
-
-Generate the json
-```json
-{
-  "@context": [
-    "https://www.w3.org/ns/did/v1",
-    "https://w3id.org/security/suites/jws-2020/v1"
-  ],
-  "id": "did:velocity:v2:${ethereum-url}",
-  "verificationMethod": [
-    {
-      "id": "did:velocity:v2:${ethereum-url}#0",
-      "type": "JsonWebKey2020",
-      "controller": "did:velocity:v2:${ethereum-url}",
-      "publicKeyJwk": ${json-web-key}
-    }
-  ],
-  "assertionMethod": ["did:velocity:v2:${ethereum-url}#0"],
-  "authentication": ["did:velocity:v2:${ethereum-url}#0"],
-  "capabilityInvocation": ["did:velocity:v2:${ethereum-url}#0"],
-  "capabilityDelegation": ["did:velocity:v2:${ethereum-url}#0"],
-  "keyAgreement": ["did:velocity:v2:${ethereum-url}#0"]
-}
-```
-
-If the JWK contains a `use` property with the value "sig" then the `keyAgreement` property is not included in the DID Document.  If the `use` value is "enc" then _only_ the `keyAgreement` property is included in the DID Document.
-
-The JWK _should_ have the appropriate `use` value set to match the capabilities of the specified `crv`.  For example, the curve `ed25519` is only valid for "sig" use and `X25519` is only valid for "enc" (see [RFC 8037](https://datatracker.ietf.org/doc/html/rfc8037) and the second example below).
-
-The JWK may contain additional custom properties and values which will be accessible only in the `verificationMethod`.  Any additional properties other than `use` (as documented above) are not referenced or used in the generation of the DID Document.
+#### Encryption Key Derivation
+1.	Pick the properties `credentialSubject`, `validFrom`, `expirationDate` and `validUntil`into a new property
+2.	Run [RFC8785](https://tools.ietf.org/html/rfc8785) JSON canonicalization.
+3.	Run the Sha256 hash algorithm on the result
+4.	Run the Argon2 algorithm on the reuslt
 
 #### To create the DID URL:
 
@@ -82,14 +69,52 @@ Since `did:velocity:v2` only contains a single key, the DID URL fragment identif
 
 If the JWK contains a `kid` value it is _not_ used as the reference, `#0` is the only valid value.
 
-
 ### Read
+
+#### Single Key
 
 1. Remove the prefix `did:velocity:v2:`
 2. Decode the remaining string using [Ethereum Transaction URL](https://eips.ethereum.org/EIPS/eip-681)
 3. Use the ethereum url is used to lookup the data contained at that location
-4. On the transaction include an account cotaining a Velocity Coupon. The coupon will be burnt during resolution.
+4. (optional) Include the id of a [NFT - ERC721](https://eips.ethereum.org/EIPS/eip-721) compatible token. The token will be burnt during resolution.
 5. The type and hex value of the encrypted public key will be returned along with the Issuer VC on the metadata list
+
+#### Multiple Keys
+
+1. Remove the prefix `did:velocity:v2:multi`
+2. Extract each separate key identifier by splutting on ";"
+3. Run for each identifier steps 2-5 of the [Single Key algorithm](#single-key)
+
+#### To create the DID Document
+
+2. Derive the secret used initially by running [Encryption Key Derivation](#encrpytion-key-derivation)
+3. Decrypt the hex value of the encrypted public key using AES-256-GCM
+4. Convert the hex key to a jwk (`json-web-key`)
+
+Generate the json
+```json
+{
+  "@context": [
+    "https://www.w3.org/ns/did/v1"
+  ],
+  "id": "did:velocity:v2:${identifier}",
+  "verificationMethod": [
+    {
+      "id": "did:velocity:v2:${ethereum-url}#0",
+      "type": "JsonWebKey2020",
+      "controller": "did:velocity:v2:${identifier}",
+      "publicKeyJwk": ${json-web-key}
+    }
+  ],
+  "assertionMethod": ["did:velocity:v2:${identifier}#0"],
+  "authentication": ["did:velocity:v2:${identifier}#0"],
+  "capabilityInvocation": ["did:velocity:v2:${identifier}#0"],
+  "capabilityDelegation": ["did:velocity:v2:${identifier}#0"],
+  "keyAgreement": ["did:velocity:v2:${identifier}#0"]
+}
+```
+
+The JWK may contain additional custom properties and values which will be accessible only in the `verificationMethod`.  Any additional properties other than `use` (as documented above) are not referenced or used in the generation of the DID Document.
 
 ### Update
 
@@ -103,10 +128,16 @@ Not supported.
 
 ### ES256K Key
 
-#### DID
+#### DID for single key
 ```text
 did:velocity:v2:0x235f24005b553e50c873ef847cf51a298e5d23ff:3:5432
 ```
+
+#### DID for multi key
+```text
+did:velocity:v2:multi:0x056aa5dc5b1cf09529c39f56348ddc46f340ec7d:253869613654622:3262;0xef988b59498b9663909b508123675733cad647cc:51243483654409:1549;
+```
+
 
 #### KID URL
 ```text
@@ -144,14 +175,17 @@ did:velocity:v2:0x235f24005b553e50c873ef847cf51a298e5d23ff:3:5432#0
 
 ## Security and Privacy Considerations
 
-Since this velocity method is very similar to the DID Key method, see also [did-key](https://w3c-ccg.github.io/did-method-key/#security-and-privacy-considerations)
+This DID velocity method is immutable just like DID:KEY or DID:JWK.
+
+See also [did-key](https://w3c-ccg.github.io/did-method-key/#security-and-privacy-considerations) & [did-jwk](https://github.com/quartzjer/did-jwk/blob/main/spec.md#security-and-privacy-considerations)
 
 ### Security
 
-Since the contract on chain is immutable is no support for key rotation, if the key is compromised then the identifier becomes unusable and unrecoverable. Therefore this method should only be used when the private key will not be used again. 
+Since the `did:velocity` on chain is immutable is no support for key rotation, if the key is compromised then the identifier becomes unusable and unrecoverable. Therefore this method should only be used when the private key will not be used again. 
 
 There is no provided means of cryptographically verifying possession of the public key material, any such verification must be performed separately by applications using a sufficient challenge-response protocol.
 
 ### Privacy
 
 Using the same DID Velocity identifier with multiple different entities will enable those entities to correlate the usage to the same subject.
+
