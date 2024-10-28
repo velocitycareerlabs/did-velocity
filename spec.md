@@ -6,14 +6,24 @@ to an on chain contract that ensures that resolution will burn an ethereum NFT
 
 ## DID Format
 
+The Velocity DID format in ABNF form
+
 ```
-did-velocity-format   := did:velocity:v2:<velocity-bucket-url>
-velocity-bucket-url  := 
+did-velocity-format := "did:velocity:v2:" identifiers
+identifiers := identifier / “multi:” 1*(identifier “;”)
+identifier: account-id ":" list-id ":" entry-id
+account-id = “0x” 1*HEXDIG
+list-id: *id-char
+entry-id: *id-char
+id-char: DIGIT
 ```
 
-The `velocity-bucket-url` is a location in the velocity credential metadata contract. The contracts state consists of bitlists of fixed size. Each list contains up to 10000 
+The `identifier` is a location in the velocity credential metadata contract. The contracts state consists of bitlists of fixed size. Each list contains up to 10000 
 encrypted keys.
 
+Note that when written to a the Velocity Network DLT the account-id is 0x and 40 hexadecimal characters
+
+When having a DID with `identifiers` that is prefixed with `multi:` then more than one identifier can be used with the end identified by a semi colon “;”. This form is only used during DID resolution.
 
 ## DID Operations
 
